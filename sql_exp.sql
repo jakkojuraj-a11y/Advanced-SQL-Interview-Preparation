@@ -276,23 +276,177 @@ INSERT INTO transactions VALUES
 (7,104,400,'2024-01-04 11:15:00'),
 (8,105,1000,'2024-01-05 09:45:00');
 
--- Write a SQL query to identify duplicate transactions while keeping only the latest record.
-
-
 -- BONUS
 -- Bonus Interview Questions
 -- Find the second highest salary in each department.
+Select * from emp;
+select max(salary) as second_highest_salary from emp where salary < (SELECT MAX(SALARY) AS second_highest_salary FROM EMP );
+
 -- Find customers who purchased in January but not in February.
+
+select * from ord;
+
+select o1.customer_id from ord o1
+where month(o1.order_date) = 1
+and not exists(
+select 1 from ord o2 
+where o1.customer_id = o2.customer_id
+and month(o2.order_date) = 2); 
+
 -- Find products with sales greater than the category average.
+
+select * from product_sales;
+
+WITH category_avg AS (
+    SELECT category,
+           AVG(total_sales) AS avg_sales
+    FROM product_sales
+    GROUP BY category
+)
+
+SELECT p.product_name,
+       p.category,
+       p.total_sales
+FROM product_sales p
+JOIN category_avg c
+ON p.category = c.category
+WHERE p.total_sales > c.avg_sales;
+
+
+SELECT product_name, category, total_sales From Product_sales p 
+where total_sales > (
+select avg(a.total_sales) from product_sales a 
+where p.category = a.category);
+
 -- Calculate a 3-month moving average of sales.
+
+SELECT * FROM ORD;
+
+WITH MONTHLY AS (SELECT DATE_FORMAT(ORDER_DATE,'%Y-%m') as month,sum(QUANTITY * price) AS SALES FROM ORD
+group by DATE_FORMAT(ORDER_DATE,'%Y,%m')
+)
+
+SELECT MONTH,SALES,ROUND(AVG(SALES) OVER(ORDER BY MONTH 
+            ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+),2) AS _MOVING_SALES FROM MONTHLY;
+
+
 -- Find the top-selling product each month.
+
+WITH SALE AS (SELECT product_id,DATE_FORMAT(ORDER_DATE,'%Y-%m') as Month,sum(quantity * price) as Total_Sales
+From ord
+GROUP BY product_id,DATE_FORMAT(ORDER_DATE,'%Y-%m')),
+
+TOP AS (SELECT *,dense_rank() OVER(partition by MONTH ORDER BY TOTAL_SALES DESC) AS TOP FROM sale)
+
+SELECT * FROM TOP WHERE TOP = 1;
+
+
 -- Find employees whose salary is higher than their department average.
+
+SELECT * FROM EMP;
+
+SELECT EMP_NAME,DEPARTMENT,SALARY FROM EMP E
+WHERE SALARY > (SELECT AVG(D.SALARY) FROM EMP D WHERE E.DEPARTMENT = D.DEPARTMENT);
+
+
 -- Find consecutive days with sales.
+
+WITH ODD AS (SELECT distinct ORDER_DATE FROM ORD),
+consecutive AS (SELECT ORDER_DATE ,LAG(ORDER_DATE) OVER(order by ORDER_DATE) AS PREV FROM ODD)
+SELECT * FROM consecutive
+WHERE datediff(ORDER_DATE,PREV) = 1;
+
+WITH sales_days AS (
+    SELECT DISTINCT order_date
+    FROM ord
+),
+consecutive AS (
+    SELECT
+        order_date,
+        LAG(order_date) OVER (ORDER BY order_date) AS previous_day
+    FROM sales_days
+)
+
+SELECT *
+FROM consecutive
+WHERE DATEDIFF(order_date, previous_day) = 1;
+
+
+
 -- Calculate cumulative revenue by month.
+
+with mon as (SELECT DATE_FORMAT(ORDER_DATE,'%Y-%m') as Month, sum(quantity * price) as total_sales from ord group by DATE_FORMAT(ORDER_DATE,'%Y-%m'))
+select month,sum(total_sales) over(order by month) as cumulative from mon;
+
+
 -- Find the first and last order of every customer.
+
+WITH orders_rank AS (
+    SELECT customer_id,order_id,order_date, row_number() OVER( PARTITION BY customer_id order by ORDER_DATE) AS FIRST, row_number() OVER(PARTITION BY customer_id order by ORDER_DATE  DESC) AS LAST from ord )
+    select * from orders_rank where first = 1 or last = 1;
+        
+
 -- Detect gaps in order dates using LAG().
+
+with gap as (SELECT ORDER_DATE,lag(order_date) over (order by ORDER_DATE)as prev_days from ord)
+select order_date,prev_days,datediff(order_date,prev_days) as day_gaps from gap 
+where datediff(order_date,prev_days) > 1;
+
+
 -- Calculate each employee's salary as a percentage of the department total.
+
+SELECT * FROM EMP;
+
+SELECT emp_id,emp_name,department,salary,ROUND(salary * 100.0 / SUM(salary) OVER (PARTITION BY department),2) AS percentage FROM emp;
+
+
 -- Find the top 5 customers by yearly revenue.
+
+with top as (SELECT CUSTOMER_ID,YEAR(ORDER_DATE) AS YEAR,SUM(QUANTITY * PRICE) as total_revenue,dense_rank() over(partition by YEAR(ORDER_DATE)
+ order by SUM(QUANTITY * PRICE) desc) as rank1 from ord
+ group by CUSTOMER_ID,YEAR(ORDER_DATE))
+ 
+ select * from top where rank1 <= 5;
+
+
+
 -- Rank cities by total sales.
+
+select * from ord;
+
+select city,sum(quantity * price) as total_sales,dense_rank() over(order by sum(quantity * price) desc) as Rankings from ord
+group by city;
+
+
+
 -- Identify inactive customers (no purchases in the last 6 months).
+WITH IN_ACTIVE AS (
+SELECT CUSTOMER_ID,MAX(ORDER_DATE) AS LAST_DATE FROM ORD
+GROUP BY CUSTOMER_ID)
+
+SELECT CUSTOMER_ID,LAST_DATE FROM IN_ACTIVE
+WHERE LAST_DATE < date_sub(curdate(),INTERVAL 6 MONTH);
+
+
+
 -- Calculate repeat purchase frequency by customer.
+
+SELECT CUSTOMER_ID,COUNT(ORDER_ID) FROM ORD
+GROUP BY CUSTOMER_ID
+HAVING COUNT(ORDER_ID) > 1;
+
+
+SELECT
+    ROUND(
+        COUNT(CASE WHEN order_count > 1 THEN 1 END) * 100.0
+        / COUNT(*),
+        2
+    ) AS repeat_purchase_rate
+FROM (
+    SELECT
+        customer_id,
+        COUNT(order_id) AS order_count
+    FROM ord
+    GROUP BY customer_id
+) t;
